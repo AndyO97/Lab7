@@ -1,7 +1,9 @@
 const express = require( 'express' );
 const bodyParser = require( 'body-parser' );
 const morgan = require( 'morgan' );
+const mongoose = require( 'mongoose' );
 const validateToken = require('./middleware/validateToken.js');
+const { Bookmarks } = require( './models/bookmarkModel' );
 const app = express();
 const jsonParser = bodyParser.json();
 const { v4: uuidv4 } = require('uuid');
@@ -10,43 +12,22 @@ const { v4: uuidv4 } = require('uuid');
 app.use( morgan( 'dev' ) );
 app.use( validateToken );
 
-let listOfBookmarks = [
-    {       
-        id: "b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-        title: "YouTube",
-        description: "Page to see videos",
-        url: "https://www.youtube.com",
-        rating: 8
-        //name : "Marcel",
-        //id : 123
-    },
-    {   
-        id: "b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6e",
-        title: "Mis Cursos",
-        description: "Page to see university content",
-        url: "https://miscursos.tec.mx/",
-        rating: 9
-        //name : "Martha",
-        //id : 456
-    },
-    {
-        id: "123",
-        title: "Web Applications Development",
-        description: "Page to see the content of the course Web Application development",
-        url: "https://sites.google.com/site/wadfeb3/",
-        rating: 10
-        //name: "Alfredo",
-        //id : 847
-    }
-];
+let listOfBookmarks = [];
 
 
 app.get( '/api/bookmarks', ( req, res ) => {
     console.log( "Getting all bookmarks." );
-    console.log( req.headers );
-    console.log( req.params );
+    
+    Bookmarks
+        .getAllBookmarks()
+            .then( result => {
+                return res.status( 200 ).json( result );
+            })
+            .catch( err => {
+                res.statusMessage = "Something is wrong with the Database. Try again later";
+                return res.status( 500 ).end();
+            });
 
-    return res.status( 200 ).json( listOfBookmarks );
 });
 
 
@@ -61,66 +42,25 @@ app.get( '/api/bookmark', ( req, res ) => {
         return res.status( 406 ).end();
     }
 
-    let result = listOfBookmarks.find( ( bookmark ) => {
-        if( bookmark.title == title  ){
-            return bookmark;
-        }
-    });
+    Bookmarks
+        .getBookmarks(title)
+            .then( result => {
+                 // Handle not found title error
+                // if( result.errmsg ){
+                if(!result.length){
+                    res.statusMessage = `There are no bookmarks with the provided 'title=${title}'.`+
+                                        result.errmsg;
+                    return res.status( 404 ).end();
+                }
+                return res.status( 200 ).json( result );
+            })
+            .catch( err => {
+                res.statusMessage = "Something is wrong with the Database. Try again later";
+                return res.status( 500 ).end();
+            });
 
-    if( !result ){
-        res.statusMessage = `There are no bookmarks with the provided 'title=${title}'.`;
-        return res.status( 404 ).end();
-    }
-
-    return res.status( 200 ).json( result ); 
 });
 
-app.get( '/api/getBookmark', ( req, res ) => {
-    console.log( "Getting a bookmark by id using the query string." );
-    console.log( req.query );
-    
-    let id = req.query.id; 
-
-    if( !id ){
-        res.statusMessage = "Please send the 'id' as parameter.";
-        return res.status( 406 ).end();
-    }
-
-    let result = listOfBookmarks.find( ( bookmark ) => {
-        if( bookmark.id == id ){
-            return bookmark;
-        }
-    });
-
-    if( !result ){
-        res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`;
-        return res.status( 404 ).end();
-    }
-
-    return res.status( 200 ).json( result ); 
-});
-
-app.get( '/api/getBookmark/:id', ( req, res ) => {
-    console.log( "Getting a bookmark by id using the integrated param." );
-    console.log( req.headers );
-    //console.log( req.params ); 
-    //console.log( req.params.apikey );
-    //console.log( req.headers.book-api-key );
-    let id = req.params.id;
-
-    let result = listOfBookmarks.find( ( bookmark ) => {
-        if( bookmark.id == id  ){
-            return bookmark;
-        }
-    });
-
-    if( !result ){
-        res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`;
-        return res.status( 404 ).end();
-    }
-
-    return res.status( 200 ).json( result ); 
-});
 
 app.post( '/api/bookmarks', jsonParser, ( req, res ) => {
     console.log( "Adding a new bookmark to the list." );
@@ -143,55 +83,57 @@ app.post( '/api/bookmarks', jsonParser, ( req, res ) => {
         return res.status( 409 ).end();
     }
     
-    let flag = true;
-
-    for( let i = 0; i < listOfBookmarks.length; i ++ ){
-        if( listOfBookmarks[i].title == title  ){
-            flag = !flag;
-            break;
-        }
-    }
-
-    if( flag ){
         let newBookmark = { id, title, description, url, rating };
-        listOfBookmarks.push( newBookmark );
 
-        return res.status( 201 ).json( newBookmark ); 
-    }
-    else{
-        res.statusMessage = "The 'Title' is already on the Bookmark list.";
-        return res.status( 409 ).end();
-    }
+        Bookmarks
+            .createBookmark( newBookmark)
+            .then( result => {
+                // Handle id duplicate error
+                if( result.errmsg ){
+                    res.statusMessage = "The 'Title' is already on the Bookmark list."+
+                                        result.errmsg;
+                    return res.status( 409 ).end();
+                }
+                return res.status( 201 ).json( result ); 
+            })
+            .catch( err => {
+                res.statusMessage = "Something is wrong with the Database. Try again later";
+                return res.status( 500 ).end();
+            });
 });
 
 app.delete( '/api/bookmark/:id', ( req, res ) => {
-    console.log( "Getting a bookmark by id using the integrated param." );
-    console.log( req.headers );
-    
+    console.log( "Deleting a bookmark by id using the integrated param." ); 
     let id = req.params.id;
+    console.log(id);
 
     if( !id ){
         res.statusMessage = "Please send the 'id' to delete a bookmark";
         return res.status( 406 ).end();
     }
 
-    let itemToRemove = listOfBookmarks.findIndex( ( bookmark ) => {
-        if( bookmark.id == id ){
-            return true;
-        }
-    });
-
-    if( itemToRemove < 0 ){
-        res.statusMessage = "That 'id' was not found in the list of bookmarks.";
-        return res.status( 404 ).end();
-    }
-
-    listOfBookmarks.splice( itemToRemove, 1 );
-    return res.status( 200 ).end();
+    Bookmarks
+            .deleteBookmark( id )
+            .then( result => {
+                // Handle id no id found error
+                console.log(result);
+                if( !result ){
+                    console.log(result);
+                    res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`+
+                                        result.errmsg;
+                    return res.status( 409 ).end();
+                }
+                return res.status( 200 ).end(); 
+            })
+            .catch( err => {
+                res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`;
+                return res.status( 404 ).end();
+                //res.statusMessage = "Something is wrong with the Database. Try again later";
+                //return res.status( 500 ).end();
+            });
 });
 
 
-//app.post( '/api/bookmarks', jsonParser, ( req, res ) => {
 app.patch( '/api/bookmark/:id', jsonParser, ( req, res ) => {
     console.log( "Patching a bookmark by id using the integrated param." );
     console.log( req.params ); 
@@ -213,45 +155,98 @@ app.patch( '/api/bookmark/:id', jsonParser, ( req, res ) => {
         res.statusMessage = `The id passed in the parameters and the id in the body don't match.`;
         return res.status( 409 ).end();
     }
-    
-    let result = listOfBookmarks.find( ( bookmark ) => {
-        if( bookmark.id == id  ){
+    /*
+    let update = "{";
             if(title){
-                bookmark.title = title;
+                update +=`title: "${title}"`;
             }
             if(description){
-                bookmark.description = description;
+                if(update != "{"){
+                    update +=`,`;
+                }
+                update +=`description: "${description}"`;
             }
             if(url){
-                bookmark.url = url;
+                if(update != "{"){
+                    update +=`,`;
+                }
+                update +=`url: "${url}"`;
             }
             if(rating){
-                bookmark.rating = rating;
+                if(update != "{"){
+                    update +=`,`;
+                }
+                update +=`rating: ${rating}`;
             }
-            let newBookmark = { id, title, description, url, rating };
-            return newBookmark;
-        }
-    });
-
-    if( !result ){
-        res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`;
-        return res.status( 404 ).end();
-    }
-
-
-
-    return res.status( 202 ).json( result ); 
+            update += "}";
+            console.log("This is the update content:");
+            console.log(update);
+            */
+            Bookmarks
+            .updateBookmark( id )
+            .then( result => {
+                console.log("Value of result");
+                console.log(result);
+                // Handle id duplicate error
+                if( !result){
+                    res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`+
+                                        result.errmsg;
+                    return res.status( 404 ).end();
+                }
+                //return res.status( 200 ).end(); 
+                //let newBookmark = { id, title, description, url, rating };
+                if(title){
+                    result.title = title;
+                }
+                if(description){
+                    result.description = description;
+                }
+                if(url){
+                    result.url = url;
+                }
+                if(rating){
+                    result.rating = rating;
+                }
+                result.save(); 
+                    //if (err) return handleError(err);
+                    //res.send(result);
+                return res.status( 202 ).json( result ); 
+            })
+            .catch( err => {
+                res.statusMessage = `There are no bookmarks with the provided 'id=${id}'.`;
+                return res.status( 404 ).end();
+                //res.statusMessage = "Something is wrong with the Database. Try again later";
+                //return res.status( 500 ).end();
+            })
 });
 
 app.listen( 8080, () => {
     console.log( "This server is running on port 8080" );
+
+    new Promise(( resolve, reject ) => {
+        const settings = {
+            useNewUrlParser: true,  //This and Topology will make sure the url is parsed
+            useUnifiedTopology: true,
+            useCreateIndex: true //So mongo will recognize there is a field it will treat as a unique one
+        };
+        mongoose.connect( 'mongodb://localhost/bookmarksdb', settings, ( err ) => {
+            if( err ){
+                return reject( err );
+            }
+            else{
+                console.log( "Database connected succesfully." );
+                return resolve();
+            }
+        })
+    })
+    .catch( err => {
+        console.log( err );
+    })
 });
 
 
 // Base URL : http://localhost:8080/
 // GET endpoint : http://localhost:8080/api/bookmarks
-// GET by id in query : http://localhost:8080/api/getBookmark?id=b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6e
-// GET by id in param : http://localhost:8080/api/getBookmark/b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6e
 // GET by title in query : http://localhost:8080/api/bookmark?title=YouTube
 
 /* POST  use:
@@ -263,17 +258,40 @@ http://localhost:8080/api/bookmarks
 	"url" : "www.facebbok.com",
 	"rating" : 9
 }
+
+{
+	"title" : "YouTube",
+	"description" : "Video Streaming",
+	"url" : "www.youtube.com",
+	"rating" : 8
+}
+
+{
+	"title" : "Vimeo webpage",
+	"description" : "Video Streaming on Vimeo webpage",
+	"url" : "www.vimeo.com.us",
+	"rating" : 10
+}
 */
 
 //DELETE by id in param : http://localhost:8080/api/bookmark/123
 
 /* PATCH  use:
-http://localhost:8080/api/bookmarks/123
+http://localhost:8080/api/bookmark/123
 
 {
-    "id" : "123"
-	"title" : "Web class",
-	"description" : "Learning on web apps",
-	"rating" : 11
+	"id" : "5eace8f5b3314000d0f2e171",
+	"title" : "YouTube",
+	"description" : "Video Streaming",
+	"url" : "www.youtube.com",
+	"rating" : 8
+}
+
+{
+	"id" : "1a0894d8-a6e8-4270-b020-7463b0b711ea",
+	"title" : "Vimeo webpage",
+	"description" : "Video Streaming on Vimeo webpage",
+	"url" : "www.vimeo.com.us",
+	"rating" : 10
 }
 */

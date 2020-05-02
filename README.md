@@ -1,4 +1,4 @@
-<h1>This app serves to manage bookmarks and their information</h1>
+<h1>This app serves to manage bookmarks and their information with Mongoose</h1>
 <p>Once you clone this repository don't forget to run npm install previous to npm start </p>
 
 
